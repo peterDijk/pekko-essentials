@@ -27,8 +27,21 @@ object ActorState {
      }
    }
 
+  object WordCounter2 {
+    def apply(): Behavior[String] = Behaviors.setup { context =>
+      var total = 0
+
+      Behaviors.receiveMessage { message =>
+        val newCount = message.split(" ").length
+        total += newCount
+        context.log.info(s"Message word count: $newCount - total count: $total")
+        Behaviors.same
+      }
+    }
+  }
+
    def wordActorSystem(): Unit = {
-     def actorSystem = ActorSystem[String](WordCounter(), "WordCounterSystem")
+     def actorSystem = ActorSystem[String](WordCounter2(), "WordCounterSystem")
 
      actorSystem ! "This is a few little words"
      actorSystem ! "Another couple of words"
