@@ -12,44 +12,43 @@ object ActorState {
   - log the current number of words + the total # of words
    */
 
-   object WordCounter {
-     def apply(): Behavior[String] = Behaviors.setup { context =>
-     var totalWords = 0
-
-       Behaviors.receiveMessage { message =>
-         val splitWords = message.split(" ")
-         val countWords: Int = splitWords.length
-         totalWords += 1
-         context.log.info(s"The current number of words is: $countWords")
-         context.log.info(s"The total number of words is now: $totalWords")
-         Behaviors.same
-       }
-     }
-   }
-
-  object WordCounter2 {
+  object WordCounter {
     def apply(): Behavior[String] = Behaviors.setup { context =>
-      var total = 0
+      var totalWords = 0
 
       Behaviors.receiveMessage { message =>
-        val newCount = message.split(" ").length
-        total += newCount
-        context.log.info(s"Message word count: $newCount - total count: $total")
+        val splitWords = message.split(" ")
+        val countWords: Int = splitWords.length
+        totalWords += countWords
+        context.log.info(s"The current number of words is: $countWords")
+        context.log.info(s"The total number of words is now: $totalWords")
         Behaviors.same
       }
     }
   }
 
-   def wordActorSystem(): Unit = {
-     def actorSystem = ActorSystem[String](WordCounter2(), "WordCounterSystem")
+  object WordCounter_v2 {
+    def apply() = statelessCounter(0)
+    def statelessCounter(totalWords: Int): Behavior[String] = Behaviors.receive { (context, message) =>
+      val splitWords = message.split(" ")
+      val countWords: Int = splitWords.length
+      val newTotal = totalWords + countWords
+      context.log.info(s"The current number of words is: $countWords")
+      context.log.info(s"The total number of words is now: $newTotal")
+      statelessCounter(newTotal)
+    }
+  }
 
-     actorSystem ! "This is a few little words"
-     actorSystem ! "Another couple of words"
-     actorSystem ! "Count me then!"
+  def wordActorSystem(): Unit = {
+    val actorSystem = ActorSystem(WordCounter_v2(), "WordCounterSystem")
 
-     Thread.sleep(1000)
-     actorSystem.terminate()
-   }
+    actorSystem ! "This is a few little words"
+    actorSystem ! "Another couple of words"
+    actorSystem ! "Count me then!"
+
+    Thread.sleep(1000)
+    actorSystem.terminate()
+  }
 
   trait SimpleThing
   case object EatChocolate extends SimpleThing
@@ -82,8 +81,26 @@ object ActorState {
     }
   }
 
+  object SimpleHuman_v2 {
+    def apply(): Behavior[SimpleThing] = statelessSimpleHuman(0)
+
+    def statelessSimpleHuman(happiness: Int): Behavior[SimpleThing] = Behaviors.receive { (context, message) =>
+      message match {
+        case EatChocolate =>
+          context.log.info(s"[$happiness] Eating chocolate")
+          statelessSimpleHuman(happiness + 1)
+        case CleanUpTheFloor =>
+          context.log.info(s"[$happiness] Wiping the floor, ugh...")
+          statelessSimpleHuman(happiness - 2)
+        case LearnPekko =>
+          context.log.info(s"[$happiness] Learning Pekko, YAY!")
+          statelessSimpleHuman(happiness + 99)
+      }
+    }
+  }
+
   def demoSimpleHuman(): Unit = {
-    val human = ActorSystem(SimpleHuman(), "DemoSimpleHuman")
+    val human = ActorSystem(SimpleHuman_v2(), "DemoSimpleHuman")
 
     human ! LearnPekko
     human ! EatChocolate
@@ -95,7 +112,6 @@ object ActorState {
 
   def main(args: Array[String]): Unit = {
     wordActorSystem()
-//  demoSimpleHuman()
-
+//      demoSimpleHuman()
   }
 }
