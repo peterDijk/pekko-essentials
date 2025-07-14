@@ -32,45 +32,79 @@ object ChildActorsExercise {
   case class Reply(count: Int) extends UserProtocol
 
   object WordCounterMaster {
-    def apply(): Behavior[MasterProtocol] = active(Map())
-    def active(workers: Map[Int, (ActorRef[WorkerProtocol], Option[ActorRef[UserProtocol]])]): Behavior[MasterProtocol] = Behaviors.receive { (context, message) =>
+    def apply(): Behavior[MasterProtocol] = Behaviors.receive { (context, message) =>
       message match {
         case Initialize(nChildren) =>
-          // use % nChildren?
-          val range = 1 to nChildren
-          val initWorkers = range.foldLeft(Map.empty[Int, (ActorRef[WorkerProtocol], Option[ActorRef[UserProtocol]])]) { (acc, id) =>
-            context.log.info(s"spawning worker with id ${id}")
-            val worker = context.spawn(WordCounterWorker(), s"worker-$id")
-            acc.updated(id, (worker, None))
-          }
-          active(initWorkers)
-        case WordCountTask(text, replyTo) =>
-          val workerId = 1 // ??? % workers.length?
-          val workerOption = workers.get(workerId)
-          workerOption.fold(context.log.info(s"worker with id ${workerId} not found"))(
-            (worker, replyTo) => worker ! WorkerTask(workerId, text)
-          )
+          context.log.info(s"[master] initializing with $nChildren children")
+//          val range = 1 to nChildren
+          //          val initWorkers = range.foldLeft(Map.empty[Int, (ActorRef[WorkerProtocol], Option[ActorRef[UserProtocol]])]) { (acc, id) =>
+          //            context.log.info(s"spawning worker with id ${id}")
+          //            val worker = context.spawn(WordCounterWorker(), s"worker-$id")
+          //            acc.updated(id, (worker, None))
+          //          }
+          val childRefs = for {
+            id <- 1 to nChildren
+          } yield context.spawn(WordCounterWorker(context.self), s"worker-$id")
+
+          active(childRefs, 0, 0, Map())
+        case _ =>
+          context.log.info("[master] Command not supported while idle")
           Behaviors.same
+      }
+    }
+
+    //    def active(workers: Map[Int, (ActorRef[WorkerProtocol], Option[ActorRef[UserProtocol]])]): Behavior[MasterProtocol] = Behaviors.receive { (context, message) =>
+    def active(
+                childRefs: Seq[ActorRef[WorkerProtocol]],
+                currentChildIndex: Int,
+                currentTaskId: Int,
+                requestMap: Map[Int, ActorRef[UserProtocol]]): Behavior[MasterProtocol] = Behaviors.receive { (context, message) =>
+      message match {
+        case WordCountTask(text, replyTo) =>
+          context.log.info(s"[master] I've received $text - I will send it to the child $currentChildIndex")
+          //          val workerOption = workers.get(workerId)
+          //          workerOption.fold(context.log.info(s"worker with id ${workerId} not found"))(
+          //            (worker, replyTo) => worker ! WorkerTask(workerId, text)
+          //          )
+          val task = WorkerTask(currentTaskId, text)
+          val childRef = childRefs(currentChildIndex)
+          childRef ! task
+          val nextChildIndex = (currentChildIndex + 1) % childRefs.length
+          val nextTaskId = currentTaskId + 1
+          active(childRefs, nextChildIndex, nextTaskId, requestMap.updated(currentTaskId, replyTo))
         case WordCountReply(id, count) =>
-          val workerOption = workers.get(id)
-          workerOption.foreach(workerTuple =>
-            val (worker, replyTo) = workerTuple
-            replyTo.foreach(_ ! Reply(count)))
+          //          val workerOption = workers.get(id)
+          //          workerOption.foreach(workerTuple =>
+          //            val (worker, replyTo) = workerTuple
+          //            replyTo.foreach(_ ! Reply(count)))
+          //          Behaviors.same
+          context.log.info(s"[master] I've received a reply for task-id $id with $count")
+          val originalSender = requestMap(id)
+          originalSender ! Reply(count)
+          active(childRefs, currentChildIndex, currentTaskId, requestMap.removed(id))
+        case _ =>
+          context.log.info("[master] Command not supported while active")
           Behaviors.same
       }
     }
   }
 
+
   object WordCounterWorker {
-    def apply(): Behavior[WorkerProtocol] = Behaviors.receive { (context, message) =>
+    def apply(master: ActorRef[MasterProtocol]): Behavior[WorkerProtocol] = Behaviors.receive { (context, message) =>
       message match {
         case WorkerTask(id, text) =>
+          context.log.info(s"[${context.self.path}] I've received task $id with '$text'")
           val splitWords = text.split(" ")
           val countWords: Int = splitWords.length
           context.log.info(s"[worker-$id] The current number of words is: $countWords")
-          val parent: ActorRef[MasterProtocol] = context.self.path.parent.asInstanceOf[ActorRef[MasterProtocol]]
+//          val parent: ActorRef[MasterProtocol] = context.self.path.parent .asInstanceOf[ActorRef[MasterProtocol]]
+
           // report back the found count to WCM
-          parent ! WordCountReply(id, countWords)
+          master ! WordCountReply(id, countWords)
+          Behaviors.same
+        case _ =>
+          context.log.info(s"[${context.self.path}] Command not supported")
           Behaviors.same
       }
 
