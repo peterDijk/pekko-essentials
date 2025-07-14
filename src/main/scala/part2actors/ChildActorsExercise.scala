@@ -2,6 +2,7 @@ package part2actors
 
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.actor.typed.{ActorRef, ActorSystem, Behavior}
+import part2actors.ActorState.WordCounter_v2.statelessCounter
 
 object ChildActorsExercise {
 
@@ -31,15 +32,53 @@ object ChildActorsExercise {
   case class Reply(count: Int) extends UserProtocol
 
   object WordCounterMaster {
-    def apply(): Behavior[MasterProtocol] = ???
+    def apply(): Behavior[MasterProtocol] = active(Map())
+    def active(workers: Map[Int, (ActorRef[WorkerProtocol], Option[ActorRef[UserProtocol]])]): Behavior[MasterProtocol] = Behaviors.receive { (context, message) =>
+      message match {
+        case Initialize(nChildren) =>
+          // use % nChildren?
+          val range = 1 to nChildren
+          val initWorkers = range.foldLeft(Map.empty[Int, (ActorRef[WorkerProtocol], Option[ActorRef[UserProtocol]])]) { (acc, id) =>
+            context.log.info(s"spawning worker with id ${id}")
+            val worker = context.spawn(WordCounterWorker(), s"worker-$id")
+            acc.updated(id, (worker, None))
+          }
+          active(initWorkers)
+        case WordCountTask(text, replyTo) =>
+          val workerId = 1 // ??? % workers.length?
+          val workerOption = workers.get(workerId)
+          workerOption.fold(context.log.info(s"worker with id ${workerId} not found"))(
+            (worker, replyTo) => worker ! WorkerTask(workerId, text)
+          )
+          Behaviors.same
+        case WordCountReply(id, count) =>
+          val workerOption = workers.get(id)
+          workerOption.foreach(workerTuple =>
+            val (worker, replyTo) = workerTuple
+            replyTo.foreach(_ ! Reply(count)))
+          Behaviors.same
+      }
+    }
   }
 
   object WordCounterWorker {
-    def apply(): Behavior[WorkerProtocol] = ???
+    def apply(): Behavior[WorkerProtocol] = Behaviors.receive { (context, message) =>
+      message match {
+        case WorkerTask(id, text) =>
+          val splitWords = text.split(" ")
+          val countWords: Int = splitWords.length
+          context.log.info(s"[worker-$id] The current number of words is: $countWords")
+          val parent: ActorRef[MasterProtocol] = context.self.path.parent.asInstanceOf[ActorRef[MasterProtocol]]
+          // report back the found count to WCM
+          parent ! WordCountReply(id, countWords)
+          Behaviors.same
+      }
+
+    }
   }
 
   object Aggregator {
-    def apply(): Behavior[UserProtocol] = ???
+    def apply(): Behavior[UserProtocol] = active()
     def active(totalWords: Int = 0): Behavior[UserProtocol] = Behaviors.receive { (context, message) =>
       message match {
         case Reply(count) =>
@@ -50,7 +89,6 @@ object ChildActorsExercise {
   }
 
   def testWordCounter(): Unit = {
-
     def userGuardian: Behavior[Unit] = Behaviors.setup { context =>
       val aggregator = context.spawn(Aggregator(), "aggregator")
       val wcm = context.spawn(WordCounterMaster(), "master")
