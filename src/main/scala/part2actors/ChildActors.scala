@@ -1,6 +1,6 @@
 package part2actors
 
-import org.apache.pekko.actor.typed.{ActorRef, ActorSystem, Behavior}
+import org.apache.pekko.actor.typed.{ActorRef, ActorSystem, Behavior, Terminated}
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 
 object ChildActors {
@@ -22,28 +22,44 @@ object ChildActors {
     trait Command
     case class CreateChild(name: String) extends Command
     case class TellChild(message: String) extends Command
+    case class StopChild(name: String) extends Command
+    case object WatchChild extends Command
 
-    def apply(): Behavior[Command] = Behaviors.receive { (context, message) =>
+    def apply(): Behavior[Command] = idle()
+    def idle(): Behavior[Command] = Behaviors.receive { (context, message) =>
       message match {
         case CreateChild(name) =>
           context.log.info(s"[parent] Create child with name $name")
           // creatig child actor reference (used to send messages to this child)
           val childRef: ActorRef[String] = context.spawn(Child(), name)
           active(childRef)
+        case _ =>
+          Behaviors.same
       }
     }
 
-    def active(childRef: ActorRef[String]): Behavior[Command] = Behaviors.receive { (context, message) =>
+    def active(childRef: ActorRef[String]): Behavior[Command] = Behaviors.receive[Command] { (context, message) =>
       message match {
         case TellChild(message) =>
           context.log.info(s"[parent] sending message [$message] to child")
           childRef ! message // <- send message to other actor
           Behaviors.same
-
+        case StopChild(name: String) =>
+          context.log.info(s"[parent] Stopping child '$name''")
+          context.stop(childRef) // only works with child actors
+          idle()
+        case WatchChild =>
+          context.log.info(s"[parent] Watching child")
+          context.watch(childRef) // can use any ref, doesnt need to be child
+          Behaviors.same
         case _ =>
           context.log.info("[parent] command not supported")
           Behaviors.same
       }
+    }.receiveSignal {
+      case (context, Terminated(refThatDied)) =>
+        context.log.info(s"[parent] Child ${refThatDied.path} was killed by something")
+        idle()
     }
   }
 
@@ -62,6 +78,9 @@ object ChildActors {
     trait Command
     case class CreateChild(name: String) extends Command
     case class TellChild(childName: String, message: String) extends Command
+    case class StopChild(name: String) extends Command
+    case class WatchChild(name: String) extends Command
+
 
     def apply(): Behavior[Command] =
 //      Behaviors.receive { (context, message) =>
@@ -75,7 +94,7 @@ object ChildActors {
 //    }
       active(Map())
 
-    def active(children: Map[String, ActorRef[String]]): Behavior[Command] = Behaviors.receive { (context, message) =>
+    def active(children: Map[String, ActorRef[String]]): Behavior[Command] = Behaviors.receive[Command] { (context, message) =>
       message match {
         case CreateChild(name) =>
           context.log.info(s"[parent] Create child with name $name")
@@ -95,22 +114,62 @@ object ChildActors {
 //          }
           childRef.fold(context.log.info("I dont have a child with that name"))(_ ! message)
           Behaviors.same
-
+        case StopChild(name) =>
+          context.log.info(s"[parent] stopping child with name $name")
+          val childRef = children.get(name)
+          childRef.fold(context.log.info("I dont have a child with that name"))(context.stop)
+          active(children.removed(name))
+        case WatchChild(name) =>
+          context.log.info(s"[parent] Watching child")
+          val childOption = children.get(name)
+          childOption.fold(context.log.info("I dont have a child with that name"))(context.watch)
+          Behaviors.same
       }
+    }.receiveSignal {
+      case (context, Terminated(diedRef)) =>
+        val name = diedRef.path.name
+        context.log.info(s"[parent] Child $name was killed by something")
+        active(children.removed(name)) // doesnt work, rely on this and you get the dead letter error message
     }
 
   }
 
   def demoParentChild(): Unit = {
+    import Parent._
+    val userGuardianBehaviour: Behavior[Unit] = Behaviors.setup { context =>
+      // set up all the important actors in application
+      // setup the initial interaction
+      val parent = context.spawn(Parent(), "parentActor")
+      parent ! CreateChild("Sam")
+      parent ! WatchChild
+      parent ! TellChild("hey kid, you there?")
+      parent ! StopChild("Sam")
+      parent ! CreateChild("jsjs")
+      parent ! TellChild("Same")
+
+      // user guardian usually has no behavior of its own
+      Behaviors.empty
+    }
+
+    val system = ActorSystem(userGuardianBehaviour, "DemoParentChild")
+    Thread.sleep(1000)
+    system.terminate()
+  }
+
+  def demoParentChild_v2(): Unit = {
     import Parent_v2._
     val userGuardianBehaviour: Behavior[Unit] = Behaviors.setup { context =>
       // set up all the important actors in application
       // setup the initial interaction
       val parent = context.spawn(Parent_v2(), "parentActor")
       parent ! CreateChild("Sam")
-      parent ! TellChild("Sam", "hey kid, you there?")
       parent ! CreateChild("Nico")
+      parent ! WatchChild("Sam")
+      parent ! WatchChild("Nico")
+      parent ! TellChild("Sam", "hey kid, you there?")
+      parent ! StopChild("Sam")
       parent ! TellChild("Nico", "I love you dude!")
+      parent ! TellChild("Sam", "you there?")
 
       // user guardian usually has no behavior of its own
       Behaviors.empty
@@ -122,6 +181,6 @@ object ChildActors {
   }
 
   def main(args: Array[String]): Unit = {
-    demoParentChild()
+    demoParentChild_v2()
   }
 }
