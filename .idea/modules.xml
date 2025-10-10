@@ -3,7 +3,9 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/pekko-essentials-typed.iml" filepath="$PROJECT_DIR$/.idea/modules/pekko-essentials-typed.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/pekko-essentials/pekko-essentials-typed.main.iml" filepath="$PROJECT_DIR$/.idea/modules/pekko-essentials/pekko-essentials-typed.main.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/pekko-essentials/pekko-essentials-typed.pekko-essentials-typed-build.iml" filepath="$PROJECT_DIR$/.idea/modules/pekko-essentials/pekko-essentials-typed.pekko-essentials-typed-build.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/pekko-essentials/pekko-essentials-typed.test.iml" filepath="$PROJECT_DIR$/.idea/modules/pekko-essentials/pekko-essentials-typed.test.iml" />
     </modules>
   </component>
 </project>

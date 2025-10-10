@@ -126,7 +126,7 @@ object ChildActorsExercise {
     def userGuardian: Behavior[Unit] = Behaviors.setup { context =>
       val aggregator = context.spawn(Aggregator(), "aggregator")
       val wcm = context.spawn(WordCounterMaster(), "master")
-
+      
       wcm ! Initialize(3)
       wcm ! WordCountTask("I love Pekko", aggregator)
       wcm ! WordCountTask("another sentence", aggregator)

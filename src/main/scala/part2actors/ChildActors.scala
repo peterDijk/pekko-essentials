@@ -157,7 +157,7 @@ object ChildActors {
   }
 
   def demoParentChild_v2(): Unit = {
-    import Parent_v2._
+    import Parent_v2._  
     val userGuardianBehaviour: Behavior[Unit] = Behaviors.setup { context =>
       // set up all the important actors in application
       // setup the initial interaction
