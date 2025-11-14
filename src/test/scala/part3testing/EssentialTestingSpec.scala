@@ -3,97 +3,99 @@ package part3testing
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.actor.typed.{ActorRef, Behavior}
+
+import scala.concurrent.duration.*
 import org.scalatest.wordspec.AnyWordSpecLike
-import scala.concurrent.duration._
 
-class EssentialTestingSpec
-    extends ScalaTestWithActorTestKit
-    with AnyWordSpecLike {
-
-  import EssentialTestingSpec._
+class EssentialTestingSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
 
   "A simple actor" should {
     // test suite
+    import EssentialTestingSpec.*
 
     "send back a duplicated message" in {
       // code for testing
-      val simpleActor = testKit.spawn(SimpleActor(), "simpleActor") // actor under test
-      val probe = testKit.createTestProbe[SimpleProtocol]() // "inspector"
+      val simpleActor = testKit.spawn(SimpleActor(), "simpleActor1")
+      val probe = testKit.createTestProbe[SimpleProtocol]() // "inspector for message replies"
 
       // scenario
-      simpleActor ! SimpleMessage("Pekko", probe.ref)
+      simpleActor ! SimpleMessage("I love Pekko", probe.ref)
 
-      // assertions
-      probe.expectMessage(SimpleReply("PekkoPekko"))
+      probe.expectMessage(SimpleReply("Received: I love Pekko"))
     }
   }
 
   "A black hole actor" should {
-    "not reply back" in {
-      val blackHole = testKit.spawn(BlackHole(), "blackHole")
+    import EssentialTestingSpec.*
+
+    "not respond to any messages" in {
+      val blankActor = testKit.spawn(BlankActor(), "blankActor1")
       val probe = testKit.createTestProbe[SimpleProtocol]()
 
-      blackHole ! SimpleMessage("I love Pekko", probe.ref)
-      blackHole ! SimpleMessage("Hey can you hear me?", probe.ref)
-      blackHole ! SimpleMessage("I'm TALKING TO YOU!", probe.ref)
+      blankActor ! SimpleMessage("Hello?", probe.ref)
 
       probe.expectNoMessage(1.second)
     }
   }
 
   "A simple actor with a separate test suite" should {
+    import EssentialTestingSpec.*
     val simpleActor = testKit.spawn(SimpleActor(), "simpleActor")
     val probe = testKit.createTestProbe[SimpleProtocol]()
 
-    "uppercase a string" in {
-      simpleActor ! UppercaseString("Pekko", probe.ref)
+    "uppercase a string message" in {
+      simpleActor ! UpperCaseString("make me uppercase", probe.ref)
+
       val receivedMessage = probe.expectMessageType[SimpleReply]
-      // other assertions
+
       assert(receivedMessage.contents == receivedMessage.contents.toUpperCase()) // Scala standard assertion
-      receivedMessage.contents should be("PEKKO") // ScalaTest library assertion
+      receivedMessage.contents should be ("MAKE ME UPPERCASE") // ScalaTest library assertion
     }
 
-    "reply with favorite tech as multiple messages" in {
+    "send back multiple favorite tech messages" in {
       simpleActor ! FavoriteTech(probe.ref)
-      // fetch multiple messages
-      val replies: Seq[SimpleProtocol] = probe.receiveMessages(2, 1.second)
-      val repliesContents: Seq[String] = replies.collect {
+
+      val messages: Seq[SimpleProtocol] = probe.receiveMessages(2, 1.second)
+      val replies = messages.collect {
         case SimpleReply(contents) => contents
       }
 
-      // assertion
-      repliesContents should contain allOf ("Scala", "Pekko")
+      messages.map {
+        case SimpleReply(contents) => contents
+      } should contain allOf ("Pekko", "Scala")
+
+      replies should contain allOf ("Pekko", "Scala")
     }
   }
 }
 
 object EssentialTestingSpec {
-  // code under test
+  // code under test for convenience
   trait SimpleProtocol
-  case class SimpleMessage(message: String, sender: ActorRef[SimpleProtocol])
-      extends SimpleProtocol
-  case class UppercaseString(message: String, replyTo: ActorRef[SimpleProtocol])
-      extends SimpleProtocol
-  case class FavoriteTech(replyTo: ActorRef[SimpleProtocol])
-      extends SimpleProtocol
+  case class SimpleMessage(message: String, replyTo: ActorRef[SimpleProtocol]) extends SimpleProtocol
+  case class UpperCaseString(message: String, replyTo: ActorRef[SimpleProtocol]) extends SimpleProtocol
+  case class FavoriteTech(replyTo: ActorRef[SimpleProtocol]) extends SimpleProtocol
   case class SimpleReply(contents: String) extends SimpleProtocol
 
   object SimpleActor {
-    def apply(): Behavior[SimpleProtocol] = Behaviors.receiveMessage {
-      case SimpleMessage(msg, replyTo) =>
-        replyTo ! SimpleReply(msg + msg)
-        Behaviors.same
-      case UppercaseString(msg, replyTo) =>
-        replyTo ! SimpleReply(msg.toUpperCase())
-        Behaviors.same
-      case FavoriteTech(replyTo) =>
-        replyTo ! SimpleReply("Scala")
-        replyTo ! SimpleReply("Pekko")
-        Behaviors.same
-    }
+    def apply(): Behavior[SimpleProtocol] =
+      Behaviors.receiveMessage {
+        case SimpleMessage(message, sender) =>
+          sender ! SimpleReply(s"Received: $message")
+          Behaviors.same
+        case UpperCaseString(message, sender) =>
+          sender ! SimpleReply(message.toUpperCase)
+          Behaviors.same
+        case FavoriteTech(replyTo) =>
+          replyTo ! SimpleReply("Pekko")
+          replyTo ! SimpleReply("Scala")
+          Behaviors.same
+      }
   }
 
-  object BlackHole {
-    def apply(): Behavior[SimpleProtocol] = Behaviors.ignore
+  object BlankActor {
+    def apply(): Behavior[SimpleProtocol] =
+      Behaviors.ignore
   }
+
 }
